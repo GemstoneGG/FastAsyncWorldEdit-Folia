@@ -60,7 +60,15 @@ val adapters = configurations.create("adapters") {
         )
     }
 }
-
+val foliaAdapters = configurations.create("foliaAdapters") {
+    description = "Adapters to include in the JAR"
+    isCanBeConsumed = false
+    isCanBeResolved = true
+    shouldResolveConsistentlyWith(configurations["runtimeClasspath"])
+    attributes {
+        attribute(Obfuscation.OBFUSCATION_ATTRIBUTE, objects.named(Obfuscation.OBFUSCATED))
+    }
+}
 dependencies {
     // Modules
     api(projects.worldeditCore)
@@ -69,11 +77,18 @@ dependencies {
     project.project(":worldedit-bukkit:adapters").subprojects.forEach {
         "adapters"(project(it.path))
     }
-
+    project.project(":worldedit-bukkit:folia-adapters").subprojects.forEach {
+        "foliaAdapters"(project(it.path))
+    }
     // Minecraft expectations
     implementation(libs.fastutil)
 
     // Platform expectations
+    compileOnly("dev.folia:folia-api:1.20.1-R0.1-SNAPSHOT") {
+        exclude("junit", "junit")
+        exclude(group = "org.slf4j", module = "slf4j-api")
+        exclude(group = "net.kyori")
+    }
     compileOnly(libs.paper) {
         exclude("junit", "junit")
         exclude(group = "org.slf4j", module = "slf4j-api")
@@ -142,8 +157,17 @@ addJarManifest(WorldEditKind.Plugin, includeClasspath = true)
 
 tasks.named<ShadowJar>("shadowJar") {
     dependsOn(project.project(":worldedit-bukkit:adapters").subprojects.map { it.tasks.named("assemble") })
-    from(Callable {
+    dependsOn(project.project(":worldedit-bukkit:folia-adapters").subprojects.map { it.tasks.named("assemble") })  
+from(Callable {
         adapters.resolve()
+                .map { f ->
+                    zipTree(f).matching {
+                        exclude("META-INF/")
+                    }
+                }
+    })
+    from(Callable {
+        foliaAdapters.resolve()
                 .map { f ->
                     zipTree(f).matching {
                         exclude("META-INF/")
