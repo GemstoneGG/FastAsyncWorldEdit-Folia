@@ -102,6 +102,15 @@ tasks {
                 .toTypedArray())
 
     }
+    register<RunServer>("runFolia") {
+        downloadsApiService.set(xyz.jpenilla.runtask.service.DownloadsAPIService.folia(project))
+        minecraftVersion("1.19.4")
+        group = "run paper"
+        runDirectory.set(file("run-folia"))
+        jvmArgs("-DPaper.IgnoreJavaVersion=true", "-Dcom.mojang.eula.agree=true")
+        pluginJars(*project(":worldedit-bukkit").getTasksByName("shadowJar", false).map { (it as Jar).archiveFile }
+                .toTypedArray())
+    }
 }
 
 nexusPublishing {
