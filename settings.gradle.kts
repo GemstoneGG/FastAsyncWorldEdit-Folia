@@ -5,7 +5,9 @@ include("worldedit-libs")
 listOf("legacy", "1_17_1", "1_18_2", "1_19_4", "1_20").forEach {
     include("worldedit-bukkit:adapters:adapter-$it")
 }
-
+listOf("1_20_1").forEach {
+    include("worldedit-bukkit:folia-adapters:adapter-$it")
+}
 listOf("bukkit", "core", "cli").forEach {
     include("worldedit-libs:$it")
     include("worldedit-$it")
@@ -18,6 +20,15 @@ dependencyResolutionManagement {
         maven {
             name = "EngineHub"
             url = uri("https://maven.enginehub.org/repo/")
+        }
+    }
+}
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        maven {
+            name = "jmp repository"
+            url = uri("https://repo.jpenilla.xyz/snapshots")
         }
     }
 }
