@@ -134,9 +134,11 @@ public class Fawe {
                 WEManager.weManager().addManagers(Fawe.this.implementation.getMaskManagers());
             } catch (Throwable ignored) {
             }
-        }, 0);
+        }, 0);s
 
+        // if (!FoliaSupport.isFolia()) {            
         TaskManager.taskManager().repeat(timer, 1);
+        // }        
 
         clipboardExecutor = new KeyQueuedExecutorService<>(new ThreadPoolExecutor(
                 1,
