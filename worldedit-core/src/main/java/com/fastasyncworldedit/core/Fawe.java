@@ -206,7 +206,7 @@ public class Fawe {
         }
     }
 
-    public static boolean isMainThread() {
+    public static boolean isTickThread() {
         return instance == null || instance.thread == Thread.currentThread();
     }
 
