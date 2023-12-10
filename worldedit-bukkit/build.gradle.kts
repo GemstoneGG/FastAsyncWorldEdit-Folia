@@ -210,7 +210,7 @@ from(Callable {
             include(dependency("net.kyori:adventure-nbt:4.14.0"))
         }
         relocate("com.zaxxer", "com.fastasyncworldedit.core.math") {
-            include(dependency("com.zaxxer:SparseBitSet:1.2"))
+            include(dependency("com.zaxxer:SparseBitSet:1.3"))
         }
         relocate("org.anarres", "com.fastasyncworldedit.core.internal.io") {
             include(dependency("org.anarres:parallelgzip:1.0.5"))
@@ -230,7 +230,7 @@ tasks {
         versionNumber.set("${project.version}")
         versionType.set("release")
         uploadFile.set(file("build/libs/${rootProject.name}-Bukkit-${project.version}.jar"))
-        gameVersions.addAll(listOf("1.20.1", "1.20", "1.19.4", "1.18.2", "1.17.1", "1.16.5"))
+        gameVersions.addAll(listOf("1.20.4", "1.20.3", "1.20.2", "1.20.1", "1.20", "1.19.4", "1.18.2", "1.17.1"))
         loaders.addAll(listOf("paper", "spigot"))
         changelog.set("The changelog is available on GitHub: https://github.com/IntellectualSites/" +
                 "FastAsyncWorldEdit/releases/tag/${project.version}")

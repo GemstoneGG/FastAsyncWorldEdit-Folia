@@ -22,6 +22,7 @@ import net.minecraft.world.level.chunk.ChunkBiomeContainer;
 import net.minecraft.world.level.chunk.LevelChunk;
 
 import javax.annotation.Nullable;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -74,7 +75,7 @@ public class PaperweightGetBlocks_Copy implements IChunkGet {
     protected void storeEntity(Entity entity) {
         BukkitImplAdapter adapter = WorldEditPlugin.getInstance().getBukkitImplAdapter();
         net.minecraft.nbt.CompoundTag compoundTag = new net.minecraft.nbt.CompoundTag();
-        entity.save(compoundTag);
+        PaperweightPlatformAdapter.readEntityIntoTag(entity, compoundTag);
         entities.add((CompoundTag) adapter.toNative(compoundTag));
     }
 
@@ -99,7 +100,8 @@ public class PaperweightGetBlocks_Copy implements IChunkGet {
     }
 
     @Override
-    public void setCreateCopy(boolean createCopy) {
+    public int setCreateCopy(boolean createCopy) {
+        return -1;
     }
 
     @Override
@@ -196,6 +198,10 @@ public class PaperweightGetBlocks_Copy implements IChunkGet {
     @Override
     public char[] load(int layer) {
         layer -= getMinSectionPosition();
+        if (blocks[layer] == null) {
+            blocks[layer] = new char[4096];
+            Arrays.fill(blocks[layer], (char) BlockTypesCache.ReservedIDs.AIR);
+        }
         return blocks[layer];
     }
 
