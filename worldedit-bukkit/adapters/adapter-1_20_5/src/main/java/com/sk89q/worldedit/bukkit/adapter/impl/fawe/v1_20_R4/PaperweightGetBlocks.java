@@ -351,7 +351,8 @@ public class PaperweightGetBlocks extends AbstractBukkitGetBlocks<ServerLevel, L
         }
         // Remove existing tiles. Create a copy so that we can remove blocks
         Map<BlockPos, BlockEntity> chunkTiles = new HashMap<>(nmsChunk.getBlockEntities());
-        List<BlockEntity> beacons = null;
+        // Store beacon positions for deferred sound/event handling (but remove block entity immediately)
+        List<BlockPos> beaconPositions = null;
         if (!chunkTiles.isEmpty()) {
             for (Map.Entry<BlockPos, BlockEntity> entry : chunkTiles.entrySet()) {
                 final BlockPos pos = entry.getKey();
@@ -366,32 +367,16 @@ public class PaperweightGetBlocks extends AbstractBukkitGetBlocks<ServerLevel, L
                 int ordinal = set.getBlock(lx, ly, lz).getOrdinal();
                 if (ordinal != BlockTypesCache.ReservedIDs.__RESERVED__) {
                     BlockEntity tile = entry.getValue();
-                    if (PaperLib.isPaper() && tile instanceof BeaconBlockEntity) {
-                        if (beacons == null) {
-                            beacons = new ArrayList<>();
-                        }
-                        beacons.add(tile);
-                        if (FoliaUtil.isFoliaServer()) {
-                            Location location = new Location(
-                                    nmsWorld.getWorld(),
-                                    tile.getBlockPos().getX(),
-                                    tile.getBlockPos().getY(),
-                                    tile.getBlockPos().getZ()
-                            );
-                            Bukkit.getServer().getRegionScheduler().execute(
-                                    WorldEditPlugin.getInstance(),
-                                    location,
-                                    () -> PaperweightPlatformAdapter.removeBeacon(tile, nmsChunk)
-                            );
-                        } else {
-                            PaperweightPlatformAdapter.removeBeacon(tile, nmsChunk);
-                        }
-                        continue;
-                    }
-                    nmsChunk.removeBlockEntity(tile.getBlockPos());
                     if (createCopy) {
                         copy.storeTile(tile);
                     }
+                    if (PaperLib.isPaper() && tile instanceof BeaconBlockEntity) {
+                        if (beaconPositions == null) {
+                            beaconPositions = new ArrayList<>();
+                        }
+                        beaconPositions.add(pos.immutable());
+                    }
+                    nmsChunk.removeBlockEntity(pos);
                 }
             }
         }
@@ -620,14 +605,35 @@ public class PaperweightGetBlocks extends AbstractBukkitGetBlocks<ServerLevel, L
 
             // Call beacon deactivate events here synchronously
             // list will be null on spigot, so this is an implicit isPaper check
-            if (beacons != null && !beacons.isEmpty()) {
-                final List<BlockEntity> finalBeacons = beacons;
-                syncTasks.add(() -> {
-                    for (BlockEntity beacon : finalBeacons) {
-                        BeaconBlockEntity.playSound(beacon.getLevel(), beacon.getBlockPos(), SoundEvents.BEACON_DEACTIVATE);
-                        new BeaconDeactivatedEvent(CraftBlock.at(beacon.getLevel(), beacon.getBlockPos())).callEvent();
+            if (beaconPositions != null && !beaconPositions.isEmpty()) {
+                final List<BlockPos> finalBeaconPositions = beaconPositions;
+
+                if (FoliaUtil.isFoliaServer()) {
+                    for (BlockPos beaconPos : finalBeaconPositions) {
+                        Location location = new Location(
+                                nmsWorld.getWorld(),
+                                beaconPos.getX(),
+                                beaconPos.getY(),
+                                beaconPos.getZ()
+                        );
+                        Bukkit.getServer().getRegionScheduler().execute(
+                                WorldEditPlugin.getInstance(),
+                                location,
+                                () -> {
+                                    BeaconBlockEntity.playSound(nmsWorld, beaconPos, SoundEvents.BEACON_DEACTIVATE);
+                                    new BeaconDeactivatedEvent(CraftBlock.at(nmsWorld, beaconPos)).callEvent();
+                                }
+                        );
                     }
-                });
+                } else {
+                    // On non-Folia Paper, add to syncTasks
+                    syncTasks.add(() -> {
+                        for (BlockPos beaconPos : finalBeaconPositions) {
+                            BeaconBlockEntity.playSound(nmsWorld, beaconPos, SoundEvents.BEACON_DEACTIVATE);
+                            new BeaconDeactivatedEvent(CraftBlock.at(nmsWorld, beaconPos)).callEvent();
+                        }
+                    });
+                }
             }
 
             Set<UUID> entityRemoves = set.getEntityRemoves();
