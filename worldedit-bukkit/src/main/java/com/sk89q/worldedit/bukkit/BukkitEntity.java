@@ -89,7 +89,8 @@ public class BukkitEntity implements Entity {
         org.bukkit.entity.Entity entity = entityRef.get();
         if (entity != null) {
             if (PaperLib.isPaper()) {
-                return entity.teleportAsync(BukkitAdapter.adapt(location)).join();
+                entity.teleportAsync(BukkitAdapter.adapt(location));
+                return true;
             }
             return entity.teleport(BukkitAdapter.adapt(location));
         } else {
