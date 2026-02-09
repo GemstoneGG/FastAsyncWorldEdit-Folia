@@ -234,8 +234,7 @@ public class BukkitPlayer extends AbstractPlayerActor {
     public boolean trySetPosition(Vector3 pos, float pitch, float yaw) {
         //FAWE start
         org.bukkit.World world = player.getWorld();
-        if (pos instanceof com.sk89q.worldedit.util.Location) {
-            com.sk89q.worldedit.util.Location loc = (com.sk89q.worldedit.util.Location) pos;
+        if (pos instanceof final com.sk89q.worldedit.util.Location loc) {
             Extent extent = loc.getExtent();
             if (extent instanceof World) {
                 world = Bukkit.getWorld(((World) extent).getName());
@@ -244,14 +243,15 @@ public class BukkitPlayer extends AbstractPlayerActor {
         org.bukkit.World finalWorld = world;
         //FAWE end
         if (PaperLib.isPaper()) {
-            return player.teleportAsync(new Location(
+            player.teleportAsync(new Location(
                     finalWorld,
                     pos.x(),
                     pos.y(),
                     pos.z(),
                     yaw,
                     pitch
-            )).join();
+            ));
+            return true;
         }
         return TaskManager.taskManager().sync(() -> player.teleport(new Location(
                 finalWorld,
@@ -375,7 +375,8 @@ public class BukkitPlayer extends AbstractPlayerActor {
     @Override
     public boolean setLocation(com.sk89q.worldedit.util.Location location) {
         if (PaperLib.isPaper()) {
-            return player.teleportAsync(BukkitAdapter.adapt(location)).join();
+            player.teleportAsync(BukkitAdapter.adapt(location));
+            return true;
         }
         return player.teleport(BukkitAdapter.adapt(location));
     }
