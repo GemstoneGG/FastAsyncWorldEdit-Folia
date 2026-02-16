@@ -52,6 +52,7 @@ import net.minecraft.world.level.chunk.Strategy;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.entity.PersistentEntitySectionManager;
 import org.apache.logging.log4j.Logger;
+import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
 import org.bukkit.craftbukkit.CraftChunk;
 import org.enginehub.linbus.tree.LinCompoundTag;
@@ -371,30 +372,49 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
             return;
         }
         if (FoliaUtil.isFoliaServer()) {
-            try {
-                ChunkPos pos = levelChunk.getPos();
-                ClientboundLevelChunkWithLightPacket packet;
-                if (PaperLib.isPaper()) {
-                    packet = new ClientboundLevelChunkWithLightPacket(
-                            levelChunk,
-                            nmsWorld.getLightEngine(),
-                            null,
-                            null,
-                            false // last false is to not bother with x-ray
-                    );
-                } else {
-                    // deprecated on paper - deprecation suppressed
-                    packet = new ClientboundLevelChunkWithLightPacket(
-                            levelChunk,
-                            nmsWorld.getLightEngine(),
-                            null,
-                            null
-                    );
-                }
-                nearbyPlayers(nmsWorld, pos).forEach(p -> p.connection.send(packet));
-            } finally {
-                NMSAdapter.endChunkPacketSend(nmsWorld.getWorld().getName(), pair, lockHolder);
-            }
+            Bukkit.getServer().getRegionScheduler().execute(
+                    WorldEditPlugin.getInstance(),
+                    nmsWorld.getWorld(),
+                    chunkX,
+                    chunkZ,
+                    () -> {
+                        try {
+                            LevelChunk regionChunk = nmsWorld.getChunkSource().getChunkAtIfLoadedImmediately(chunkX, chunkZ);
+                            if (regionChunk == null) {
+                                return;
+                            }
+                            ChunkPos pos = regionChunk.getPos();
+                            ClientboundLevelChunkWithLightPacket packet;
+                            if (PaperLib.isPaper()) {
+                                packet = new ClientboundLevelChunkWithLightPacket(
+                                        regionChunk,
+                                        nmsWorld.getLightEngine(),
+                                        null,
+                                        null,
+                                        false  // last false is to not bother with x-ray
+                                );
+                            } else {
+                                // deprecated on paper - deprecation suppressed
+                                packet = new ClientboundLevelChunkWithLightPacket(
+                                        regionChunk,
+                                        nmsWorld.getLightEngine(),
+                                        null,
+                                        null
+                                );
+                            }
+                            nearbyPlayers(nmsWorld, pos).forEach(p -> p.connection.send(packet));
+                        } catch (IllegalStateException e) {
+                            LOGGER.warn(
+                                    "Skipped sending chunk packet for chunk [{}, {}] due to concurrent section modification",
+                                    chunkX,
+                                    chunkZ,
+                                    e
+                            );
+                        } finally {
+                            NMSAdapter.endChunkPacketSend(nmsWorld.getWorld().getName(), pair, lockHolder);
+                        }
+                    }
+            );
         } else {
             MinecraftServer.getServer().execute(() -> {
                 try {

@@ -182,8 +182,10 @@ public class NMSAdapter implements FAWEPlatformAdapterImpl {
             if (lock == null) {
                 lock = new ChunkSendLock();
             }
-            // Allow twice-read-locking, so if the packets have been created but not sent, we can queue another read
-            if (lock.writeWaiting || lock.lock.getReadLockCount() >= 1 || lock.lock.isWriteLocked()) {
+            // Allow twice-read-locking, so if the packets have been created but not sent, we can queue another read.
+            // Threshold is 2 to accommodate deferred execution (Folia region scheduler / main thread execute)
+            // where the read lock is held across the scheduling gap until the task completes.
+            if (lock.writeWaiting || lock.lock.getReadLockCount() >= 2 || lock.lock.isWriteLocked()) {
                 return lock;
             }
             stampedLock.stamp = lock.lock.readLock();
