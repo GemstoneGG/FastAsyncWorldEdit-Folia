@@ -421,6 +421,7 @@ public class PaperweightGetBlocks extends AbstractBukkitGetBlocks<ServerLevel, L
                                         new char[4096],
                                         adapter,
                                         serverLevel.registryAccess(),
+                                        serverLevel.palettedContainerFactory().blockStatesStrategy(),
                                         biomeData
                                 );
                                 if (PaperweightPlatformAdapter.setSectionAtomic(
@@ -496,6 +497,7 @@ public class PaperweightGetBlocks extends AbstractBukkitGetBlocks<ServerLevel, L
                                 setArr,
                                 adapter,
                                 serverLevel.registryAccess(),
+                                serverLevel.palettedContainerFactory().blockStatesStrategy(),
                                 biomeData
                         );
                         if (PaperweightPlatformAdapter.setSectionAtomic(
@@ -560,6 +562,7 @@ public class PaperweightGetBlocks extends AbstractBukkitGetBlocks<ServerLevel, L
                                 setArr,
                                 adapter,
                                 serverLevel.registryAccess(),
+                                serverLevel.palettedContainerFactory().blockStatesStrategy(),
                                 biomeData != null ? biomeData : (PalettedContainer<Holder<Biome>>) existingSection.getBiomes()
                         );
                         if (!PaperweightPlatformAdapter.setSectionAtomic(
