@@ -10,6 +10,7 @@ import com.fastasyncworldedit.core.nbt.FaweCompoundTag;
 import com.fastasyncworldedit.core.queue.IBatchProcessor;
 import com.fastasyncworldedit.core.queue.IChunkGet;
 import com.fastasyncworldedit.core.queue.implementation.packet.ChunkPacket;
+import com.fastasyncworldedit.core.util.FoliaUtil;
 import com.fastasyncworldedit.core.util.TaskManager;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
@@ -21,16 +22,9 @@ import com.sk89q.worldedit.EditSession;
 import com.sk89q.worldedit.MaxChangedBlocksException;
 import com.sk89q.worldedit.blocks.BaseItemStack;
 import com.sk89q.worldedit.bukkit.BukkitAdapter;
+import com.sk89q.worldedit.bukkit.WorldEditPlugin;
 import com.sk89q.worldedit.bukkit.adapter.BukkitImplAdapter;
 import com.sk89q.worldedit.bukkit.adapter.impl.v26_1.PaperweightAdapter;
-import com.sk89q.worldedit.bukkit.adapter.impl.fawe.v26_1.*;
-import com.sk89q.worldedit.bukkit.adapter.impl.fawe.v26_1.FaweBlockStateListPopulator;
-import com.sk89q.worldedit.bukkit.adapter.impl.fawe.v26_1.PaperweightFaweWorldNativeAccess;
-import com.sk89q.worldedit.bukkit.adapter.impl.fawe.v26_1.PaperweightMapChunkUtil;
-import com.sk89q.worldedit.bukkit.adapter.impl.fawe.v26_1.PaperweightPlacementStateProcessor;
-import com.sk89q.worldedit.bukkit.adapter.impl.fawe.v26_1.PaperweightPlatformAdapter;
-import com.sk89q.worldedit.bukkit.adapter.impl.fawe.v26_1.PaperweightPostProcessor;
-import com.sk89q.worldedit.bukkit.adapter.impl.fawe.v26_1.PaperweightStarlightRelighterFactory;
 import com.sk89q.worldedit.bukkit.adapter.impl.fawe.v26_1.regen.PaperweightRegen;
 import com.sk89q.worldedit.bukkit.adapter.impl.v26_1.PaperweightBlockMaterial;
 import com.sk89q.worldedit.entity.BaseEntity;
@@ -139,6 +133,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.OptionalInt;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -151,6 +146,10 @@ public final class PaperweightFaweAdapter extends FaweAdapter<net.minecraft.nbt.
 
     private static final Logger LOGGER = LogManagerCompat.getLogger();
     private static Method CHUNK_HOLDER_WAS_ACCESSIBLE_SINCE_LAST_SAVE;
+    private static Method REGIONIZED_GET_CURRENT_WORLD_DATA;
+    private static Field REGIONIZED_CAPTURE_TREE_GENERATION;
+    private static Field REGIONIZED_CAPTURE_BLOCK_STATES;
+    private static Field REGIONIZED_CAPTURED_BLOCK_STATES;
     private static final Codec<DataComponentPatch> COMPONENTS_CODEC = DataComponentPatch.CODEC.optionalFieldOf(
             "components", DataComponentPatch.EMPTY
     ).codec();
@@ -159,6 +158,14 @@ public final class PaperweightFaweAdapter extends FaweAdapter<net.minecraft.nbt.
         try {
             CHUNK_HOLDER_WAS_ACCESSIBLE_SINCE_LAST_SAVE = ChunkHolder.class.getDeclaredMethod("wasAccessibleSinceLastSave");
         } catch (NoSuchMethodException ignored) { // may not be present in newer paper versions
+        }
+        try {
+            Class<?> regionizedWorldData = Class.forName("io.papermc.paper.threadedregions.RegionizedWorldData");
+            REGIONIZED_GET_CURRENT_WORLD_DATA = ServerLevel.class.getMethod("getCurrentWorldData");
+            REGIONIZED_CAPTURE_TREE_GENERATION = regionizedWorldData.getField("captureTreeGeneration");
+            REGIONIZED_CAPTURE_BLOCK_STATES = regionizedWorldData.getField("captureBlockStates");
+            REGIONIZED_CAPTURED_BLOCK_STATES = regionizedWorldData.getField("capturedBlockStates");
+        } catch (ReflectiveOperationException notFolia) { // vanilla Paper - capture state lives on Level
         }
     }
 
@@ -554,21 +561,77 @@ public final class PaperweightFaweAdapter extends FaweAdapter<net.minecraft.nbt.
 
     @Override
     protected void preCaptureStates(final ServerLevel serverLevel) {
-        serverLevel.captureTreeGeneration = true;
-        serverLevel.captureBlockStates = true;
+        setCaptureState(serverLevel, true);
     }
 
     @Override
     protected List<org.bukkit.block.BlockState> getCapturedBlockStatesCopy(final ServerLevel serverLevel) {
-        return new ArrayList<>(serverLevel.capturedBlockStates.values());
+        return new ArrayList<>(capturedBlockStateValues(serverLevel));
     }
 
     @Override
     protected void postCaptureBlockStates(final ServerLevel serverLevel) {
-        serverLevel.captureBlockStates = false;
-        serverLevel.captureTreeGeneration = false;
-        serverLevel.capturedBlockStates.clear();
+        setCaptureState(serverLevel, false);
+        capturedBlockStateValues(serverLevel).clear();
     }
+
+    private static void setCaptureState(final ServerLevel serverLevel, final boolean capturing) {
+        if (FoliaUtil.isFoliaServer()) {
+            Object worldData = currentWorldData(serverLevel);
+            try {
+                REGIONIZED_CAPTURE_TREE_GENERATION.setBoolean(worldData, capturing);
+                REGIONIZED_CAPTURE_BLOCK_STATES.setBoolean(worldData, capturing);
+            } catch (IllegalAccessException e) {
+                throw new IllegalStateException("Could not set Folia capture state", e);
+            }
+            return;
+        }
+        serverLevel.captureTreeGeneration = capturing;
+        serverLevel.captureBlockStates = capturing;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static java.util.Collection<CraftBlockState> capturedBlockStateValues(final ServerLevel serverLevel) {
+        java.util.Map<?, CraftBlockState> captured;
+        if (FoliaUtil.isFoliaServer()) {
+            try {
+                captured = (java.util.Map<?, CraftBlockState>) REGIONIZED_CAPTURED_BLOCK_STATES.get(currentWorldData(serverLevel));
+            } catch (IllegalAccessException e) {
+                throw new IllegalStateException("Could not read Folia captured block states", e);
+            }
+        } else {
+            captured = serverLevel.capturedBlockStates;
+        }
+        return captured.values();
+    }
+
+    private static Object currentWorldData(final ServerLevel serverLevel) {
+        try {
+            return REGIONIZED_GET_CURRENT_WORLD_DATA.invoke(serverLevel);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Could not resolve Folia RegionizedWorldData", e);
+        }
+    }
+
+    private <T> T syncRegion(World world, BlockVector3 pt, java.util.function.Supplier<T> supplier) {
+        if (FoliaUtil.isFoliaServer()) {
+            if (Bukkit.isOwnedByCurrentRegion(world, pt.x() >> 4, pt.z() >> 4)) {
+                return supplier.get();
+            }
+
+            Location location = new Location(world, pt.x(), pt.y(), pt.z());
+            CompletableFuture<T> future = new CompletableFuture<>();
+
+            Bukkit.getServer().getRegionScheduler().run(
+                    WorldEditPlugin.getInstance(),
+                    location,
+                    scheduledTask -> future.complete(supplier.get())
+            );
+            return future.join();
+        }
+        return TaskManager.taskManager().sync(supplier);
+    }
+
     @Override
     public boolean generateFeature(ConfiguredFeatureType feature, World world, EditSession editSession, BlockVector3 pt) {
         ServerLevel serverLevel = getServerLevel(world);
@@ -580,7 +643,7 @@ public final class PaperweightFaweAdapter extends FaweAdapter<net.minecraft.nbt.
                 .getValue(Identifier.tryParse(feature.id()));
 
         com.sk89q.worldedit.bukkit.adapter.impl.fawe.v26_1.FaweBlockStateListPopulator populator = new FaweBlockStateListPopulator(serverLevel);
-        List<CraftBlockState> placed = TaskManager.taskManager().sync(() -> {
+        List<CraftBlockState> placed = syncRegion(world, pt, () -> {
             preCaptureStates(serverLevel);
             try {
                 if (!configuredFeature.place(
@@ -592,7 +655,7 @@ public final class PaperweightFaweAdapter extends FaweAdapter<net.minecraft.nbt.
                     return null;
                 }
                 List<CraftBlockState> placedBlocks = new ArrayList<>(populator.getSnapshotBlocks());
-                placedBlocks.addAll(serverLevel.capturedBlockStates.values());
+                placedBlocks.addAll(capturedBlockStateValues(serverLevel));
                 return placedBlocks;
             } finally {
                 postCaptureBlockStates(serverLevel);
@@ -617,7 +680,7 @@ public final class PaperweightFaweAdapter extends FaweAdapter<net.minecraft.nbt.
         TransformerLevelAccessor access = new TransformerLevelAccessor();
         FaweBlockStateListPopulator populator = new FaweBlockStateListPopulator(serverLevel);
         access.setDelegate(populator);
-        List<CraftBlockState> placed = TaskManager.taskManager().sync(() -> {
+        List<CraftBlockState> placed = syncRegion(world, pt, () -> {
             preCaptureStates(serverLevel);
             try {
                 StructureStart structureStart = structure.generate(
@@ -660,7 +723,7 @@ public final class PaperweightFaweAdapter extends FaweAdapter<net.minecraft.nbt.
                             ), chunkPosx
                     ));
                     List<CraftBlockState> placedBlocks = new ArrayList<>(populator.getSnapshotBlocks());
-                    placedBlocks.addAll(serverLevel.capturedBlockStates.values());
+                    placedBlocks.addAll(capturedBlockStateValues(serverLevel));
                     return placedBlocks;
                 }
             } finally {
@@ -687,7 +750,7 @@ public final class PaperweightFaweAdapter extends FaweAdapter<net.minecraft.nbt.
                 .getValue(Identifier.tryParse(treeType.id()));
 
         FaweBlockStateListPopulator populator = new FaweBlockStateListPopulator(serverLevel);
-        List<CraftBlockState> placed = TaskManager.taskManager().sync(() -> {
+        List<CraftBlockState> placed = syncRegion(world, pt, () -> {
             preCaptureStates(serverLevel);
             try {
                 if (!placedFeature.place(
@@ -699,7 +762,7 @@ public final class PaperweightFaweAdapter extends FaweAdapter<net.minecraft.nbt.
                     return null;
                 }
                 List<CraftBlockState> placedBlocks = new ArrayList<>(populator.getSnapshotBlocks());
-                placedBlocks.addAll(serverLevel.capturedBlockStates.values());
+                placedBlocks.addAll(capturedBlockStateValues(serverLevel));
                 return placedBlocks;
             } finally {
                 postCaptureBlockStates(serverLevel);

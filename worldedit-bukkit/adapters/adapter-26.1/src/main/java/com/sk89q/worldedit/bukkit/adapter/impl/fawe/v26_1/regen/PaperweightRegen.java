@@ -5,6 +5,7 @@ import com.fastasyncworldedit.core.Fawe;
 import com.fastasyncworldedit.core.queue.IChunkCache;
 import com.fastasyncworldedit.core.queue.IChunkGet;
 import com.fastasyncworldedit.core.queue.implementation.chunk.ChunkCache;
+import com.fastasyncworldedit.core.util.FoliaUtil;
 import com.google.common.collect.ImmutableList;
 import com.sk89q.worldedit.bukkit.BukkitAdapter;
 import com.sk89q.worldedit.bukkit.WorldEditPlugin;
@@ -22,6 +23,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.dedicated.DedicatedServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.ProgressListener;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.dimension.LevelStem;
@@ -37,6 +39,7 @@ import org.bukkit.craftbukkit.CraftServer;
 import org.bukkit.craftbukkit.CraftWorld;
 import org.bukkit.craftbukkit.persistence.CraftPersistentDataContainer;
 import org.bukkit.generator.BiomeProvider;
+import org.jetbrains.annotations.Nullable;
 
 import javax.annotation.Nonnull;
 import java.lang.reflect.Field;
@@ -44,6 +47,8 @@ import java.nio.file.Path;
 import java.util.Map;
 import java.util.OptionalLong;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
@@ -210,7 +215,41 @@ public class PaperweightRegen extends Regenerator {
         if (paperConfigField != null) {
             paperConfigField.set(freshWorld, originalServerWorld.paperConfig());
         }
+
+        if (FoliaUtil.isFoliaServer()) {
+            initFreshWorldForFolia(server);
+        }
+
         return true;
+    }
+
+    private void initFreshWorldForFolia(MinecraftServer server) throws Exception {
+        ChunkPos spawnChunk = ChunkPos.containing(
+                freshWorld.getChunkSource().randomState().sampler().findSpawnPosition()
+        );
+
+        CompletableFuture<Void> initialized = new CompletableFuture<>();
+
+        Bukkit.getServer().getRegionScheduler().run(
+                WorldEditPlugin.getInstance(),
+                freshWorld.getWorld(),
+                spawnChunk.x(),
+                spawnChunk.z(),
+                scheduledTask -> {
+                    try {
+                        server.initWorld(freshWorld, null);
+                        initialized.complete(null);
+                    } catch (Throwable t) {
+                        initialized.completeExceptionally(t);
+                    }
+                }
+        );
+
+        try {
+            initialized.get();
+        } catch (ExecutionException e) {
+            throw new IllegalStateException("Failed to initialise the regen temp world on Folia", e.getCause());
+        }
     }
 
     @Override
@@ -244,6 +283,11 @@ public class PaperweightRegen extends Regenerator {
             SafeFiles.tryHardToDeleteDir(tempDir);
         } catch (Exception ignored) {
         }
+    }
+
+    @Override
+    protected @Nullable World getFreshWorld() {
+        return freshWorld != null ? freshWorld.getWorld() : null;
     }
 
     @Override
