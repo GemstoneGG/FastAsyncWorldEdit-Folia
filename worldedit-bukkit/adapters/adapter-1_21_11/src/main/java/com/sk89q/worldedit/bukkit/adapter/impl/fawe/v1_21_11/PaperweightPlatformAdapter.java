@@ -421,7 +421,7 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
             MinecraftServer.getServer().execute(() -> {
                 try {
                     ChunkPos pos = levelChunk.getPos();
-                    NMSAdapter.markChunkPacketRead(lockHolder);                          // <-- ADD (3)
+                    NMSAdapter.markChunkPacketRead(lockHolder);
                     ClientboundLevelChunkWithLightPacket packet;
                     if (PaperLib.isPaper()) {
                         packet = new ClientboundLevelChunkWithLightPacket(
