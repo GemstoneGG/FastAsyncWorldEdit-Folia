@@ -231,6 +231,9 @@ public final class PaperweightAdapter implements BukkitImplAdapter<net.minecraft
         if (dataVersion != Constants.DATA_VERSION_MC_1_21_6 && dataVersion != Constants.DATA_VERSION_MC_1_21_7 && dataVersion != Constants.DATA_VERSION_MC_1_21_8) {
             throw new UnsupportedClassVersionError("Not 1.21.(6/7/8)!");
         }
+        if (dataVersion >= Constants.DATA_VERSION_MC_26_1) {
+            throw new RuntimeException("Force prevent this loading on 26.1+");
+        }
 
         serverWorldsField = CraftServer.class.getDeclaredField("worlds");
         serverWorldsField.setAccessible(true);
