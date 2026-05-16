@@ -57,6 +57,12 @@ dependencies {
 java {
     // Required when we de-sync release option and declared Java versions.
     disableAutoTargetJvm()
+
+    if (project.name in setOf("adapter-1_21_4", "adapter-1_21_5", "adapter-1_21_6", "adapter-1_21_9")) {
+        toolchain {
+            languageVersion.set(JavaLanguageVersion.of(21))
+        }
+    }
 }
 
 tasks.named("assemble") {
