@@ -9,7 +9,6 @@ import com.fastasyncworldedit.core.util.MathMan;
 import com.fastasyncworldedit.core.util.ReflectionUtils;
 import com.sk89q.worldedit.world.block.BlockTypesCache;
 
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.StampedLock;
 import java.util.function.IntFunction;
 
@@ -104,7 +103,7 @@ public class NMSAdapter implements FAWEPlatformAdapterImpl {
         if (!(chunk instanceof AbstractBukkitGetBlocks)) {
             throw new IllegalArgumentException("(IChunkGet) chunk not of type BukkitGetBlocks");
         }
-        ((AbstractBukkitGetBlocks) chunk).send();
+        ((AbstractBukkitGetBlocks<?, ?>) chunk).send();
     }
 
     /**
@@ -133,36 +132,21 @@ public class NMSAdapter implements FAWEPlatformAdapterImpl {
         if (Fawe.isMainThread()) {
             return ReflectionUtils.compareAndSet(sections, expected, value, layer);
         }
-        StampLockHolder holder = new StampLockHolder();
-        ConcurrentHashMap<IntPair, ChunkSendLock> chunks = FaweBukkitWorld.getWorldSendingChunksMap(worldName);
-        chunks.compute(pair, (k, lock) -> {
-            if (lock == null) {
-                lock = new ChunkSendLock();
-            } else if (lock.writeWaiting) {
-                throw new IllegalStateException("Attempting to write chunk section when write is already ongoing?!");
-            }
-            holder.stamp = lock.lock.tryWriteLock();
-            holder.chunkLock = lock;
-            lock.writeWaiting = true;
-            return lock;
-        });
-        try {
-            if (holder.stamp == 0) {
-                holder.stamp = holder.chunkLock.lock.writeLock();
-            }
-            return ReflectionUtils.compareAndSet(sections, expected, value, layer);
-        } finally {
-            chunks = FaweBukkitWorld.getWorldSendingChunksMap(worldName);
-            chunks.computeIfPresent(pair, (k, lock) -> {
-                if (lock != holder.chunkLock) {
-                    throw new IllegalStateException("SENDING_CHUNKS stored lock does not equal lock attempted to be unlocked?!");
-                }
-                lock.lock.unlockWrite(holder.stamp);
-                lock.writeWaiting = false;
-                // Keep the lock, etc. in the map as we're going to be accessing again later when sending
-                return lock;
-            });
+        ChunkSendLock chunkLock = FaweBukkitWorld.getWorldSendingChunksMap(worldName)
+                .computeIfAbsent(pair, k -> new ChunkSendLock());
+        long stamp = chunkLock.lock.tryWriteLock();
+        for (int spins = 0; stamp == 0L && spins < 64; spins++) {
+            Thread.onSpinWait();
+            stamp = chunkLock.lock.tryWriteLock();
         }
+        if (stamp != 0L) {
+            try {
+                return ReflectionUtils.compareAndSet(sections, expected, value, layer);
+            } finally {
+                chunkLock.lock.unlockWrite(stamp);
+            }
+        }
+        return ReflectionUtils.compareAndSet(sections, expected, value, layer);
     }
 
     /**
@@ -179,22 +163,33 @@ public class NMSAdapter implements FAWEPlatformAdapterImpl {
      *
      * @since 2.12.0
      */
-    protected static void beginChunkPacketSend(String worldName, IntPair pair, StampLockHolder stampedLock) {
-        ConcurrentHashMap<IntPair, ChunkSendLock> chunks = FaweBukkitWorld.getWorldSendingChunksMap(worldName);
-        chunks.compute(pair, (k, lock) -> {
-            if (lock == null) {
-                lock = new ChunkSendLock();
-            }
-            // Allow twice-read-locking, so if the packets have been created but not sent, we can queue another read.
-            // Threshold is 2 to accommodate deferred execution (Folia region scheduler / main thread execute)
-            // where the read lock is held across the scheduling gap until the task completes.
-            if (lock.writeWaiting || lock.lock.getReadLockCount() >= 2 || lock.lock.isWriteLocked()) {
-                return lock;
-            }
-            stampedLock.stamp = lock.lock.readLock();
-            stampedLock.chunkLock = lock;
-            return lock;
-        });
+    protected static void beginChunkPacketSend(String worldName, IntPair pair, StampLockHolder holder) {
+        holder.chunkLock = FaweBukkitWorld.getWorldSendingChunksMap(worldName)
+                .computeIfAbsent(pair, k -> new ChunkSendLock());
+    }
+
+    /**
+     * Opens an optimistic read window immediately before a chunk packet is built. Pairs with
+     * {@link #validateChunkPacketSend}. Acquires nothing - safe to use across a region handoff.
+     *
+     * @since 2.x.x
+     */
+    protected static void markChunkPacketRead(StampLockHolder holder) {
+        if (holder.chunkLock != null) {
+            holder.stamp = holder.chunkLock.lock.tryOptimisticRead();
+        }
+    }
+
+    /**
+     * Validates, immediately after a chunk packet is built, that no section swap occurred during
+     * the build. If this returns {@code false} the packet was assembled from a torn section array
+     * and must be discarded rather than sent.
+     *
+     * @return {@code true} if the built packet is consistent and safe to send
+     * @since 2.x.x
+     */
+    protected static boolean validateChunkPacketSend(StampLockHolder holder) {
+        return holder.chunkLock != null && holder.chunkLock.lock.validate(holder.stamp);
     }
 
     /**
@@ -202,16 +197,10 @@ public class NMSAdapter implements FAWEPlatformAdapterImpl {
      *
      * @since 2.12.0
      */
-    protected static void endChunkPacketSend(String worldName, IntPair pair, StampLockHolder lockHolder) {
-        ConcurrentHashMap<IntPair, ChunkSendLock> chunks = FaweBukkitWorld.getWorldSendingChunksMap(worldName);
-        chunks.computeIfPresent(pair, (k, lock) -> {
-            if (lock.lock != lockHolder.chunkLock.lock) {
-                throw new IllegalStateException("SENDING_CHUNKS stored lock does not equal lock attempted to be unlocked?!");
-            }
-            lock.lock.unlockRead(lockHolder.stamp);
-            // Do not continue to store the lock if we may not need it (i.e. chunk has been sent, may not be sent again)
-            return null;
-        });
+    protected static void endChunkPacketSend(String worldName, IntPair pair, StampLockHolder holder) {
+        if (holder.chunkLock != null) {
+            FaweBukkitWorld.getWorldSendingChunksMap(worldName).remove(pair, holder.chunkLock);
+        }
     }
 
     public static final class StampLockHolder {
@@ -222,7 +211,6 @@ public class NMSAdapter implements FAWEPlatformAdapterImpl {
     public static final class ChunkSendLock {
 
         public final StampedLock lock = new StampedLock();
-        public boolean writeWaiting = false;
 
     }
 

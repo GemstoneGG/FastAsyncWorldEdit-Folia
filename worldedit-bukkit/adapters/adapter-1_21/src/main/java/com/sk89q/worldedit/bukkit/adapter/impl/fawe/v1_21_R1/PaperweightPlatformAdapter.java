@@ -375,6 +375,7 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
                                 return;
                             }
                             ChunkPos coordIntPair = regionChunk.getPos();
+                            NMSAdapter.markChunkPacketRead(lockHolder);
                             ClientboundLevelChunkWithLightPacket packet;
                             if (PaperLib.isPaper()) {
                                 packet = new ClientboundLevelChunkWithLightPacket(
@@ -393,7 +394,9 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
                                         null
                                 );
                             }
-                            nearbyPlayers(nmsWorld, coordIntPair).forEach(p -> p.connection.send(packet));
+                            if (NMSAdapter.validateChunkPacketSend(lockHolder)) {
+                                nearbyPlayers(nmsWorld, coordIntPair).forEach(p -> p.connection.send(packet));
+                            }
                         } catch (IllegalStateException e) {
                             LOGGER.warn(
                                     "Skipped sending chunk packet for chunk [{}, {}] due to concurrent section modification",
@@ -410,6 +413,7 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
             MinecraftServer.getServer().execute(() -> {
                 try {
                     ChunkPos pos = levelChunk.getPos();
+                    NMSAdapter.markChunkPacketRead(lockHolder);
                     ClientboundLevelChunkWithLightPacket packet;
                     if (PaperLib.isPaper()) {
                         packet = new ClientboundLevelChunkWithLightPacket(
@@ -428,7 +432,9 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
                                 null
                         );
                     }
-                    nearbyPlayers(nmsWorld, pos).forEach(p -> p.connection.send(packet));
+                    if (NMSAdapter.validateChunkPacketSend(lockHolder)) {
+                        nearbyPlayers(nmsWorld, pos).forEach(p -> p.connection.send(packet));
+                    }
                 } finally {
                     NMSAdapter.endChunkPacketSend(nmsWorld.getWorld().getName(), pair, lockHolder);
                 }
