@@ -9,11 +9,11 @@ snakeyaml = "2.2"
 
 # Plugins
 dummypermscompat = "1.10"
-worldguard-bukkit = "7.0.16"
+worldguard-bukkit = "7.0.17"
 griefprevention = "18.0.0"
 griefdefender = "2.1.0-SNAPSHOT"
 residence = "6.0.0.1"
-towny = "0.103.0.1"
+towny = "0.103.0.2"
 plotsquared = "7.5.13"
 
 # Third party
@@ -21,7 +21,7 @@ bstats = "3.2.1"
 sparsebitset = "1.3"
 parallelgzip = "1.0.5"
 adventure = "5.1.1"
-checkerqual = "4.1.0"
+checkerqual = "4.2.0"
 truezip = "6.8.4"
 auto-value = "1.11.1"
 jsr305 = "3.0.2"
