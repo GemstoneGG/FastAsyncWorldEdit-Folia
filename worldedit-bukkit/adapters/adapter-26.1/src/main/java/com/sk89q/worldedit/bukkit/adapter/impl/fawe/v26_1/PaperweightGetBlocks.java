@@ -857,6 +857,11 @@ public class PaperweightGetBlocks extends AbstractBukkitGetBlocks<ServerLevel, L
         }
     }
 
+    @Override
+    protected World getBukkitWorld() {
+        return serverLevel.getWorld();
+    }
+
     /**
      * Update a given (nullable) data array to the current data stored in the server's chunk, associated with this
      * {@link PaperweightPlatformAdapter} instance. Not synchronised to the {@link PaperweightPlatformAdapter} instance as synchronisation
