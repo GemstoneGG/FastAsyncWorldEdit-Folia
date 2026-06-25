@@ -73,15 +73,15 @@ jobs:
       - name: Archive Artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: FastAsyncWorldEdit-Bukkit-SNAPSHOT
-          path: worldedit-bukkit/build/libs/FastAsyncWorldEdit-*.jar
+          name: FastAsyncWorldEdit-Paper-SNAPSHOT
+          path: worldedit-bukkit/build/libs/FastAsyncWorldEdit-Paper-*.jar
       - name: Create GitHub Release
         if: ${{ runner.os == 'Linux' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.VERSION }}
           name: ${{ env.VERSION }}
-          files: worldedit-bukkit/build/libs/FastAsyncWorldEdit-*.jar
+          files: worldedit-bukkit/build/libs/FastAsyncWorldEdit-Paper-*.jar
           generate_release_notes: true
       - name: Publish to Modrinth
         if: ${{ runner.os == 'Linux' && env.STATUS == 'release' && github.event_name == 'push' && github.ref == 'refs/heads/main'}}
