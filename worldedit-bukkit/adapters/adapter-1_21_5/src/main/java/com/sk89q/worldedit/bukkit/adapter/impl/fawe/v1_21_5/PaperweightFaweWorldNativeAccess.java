@@ -13,7 +13,6 @@ import com.sk89q.worldedit.world.block.BlockState;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.dedicated.DedicatedServer;
 import net.minecraft.server.level.FullChunkStatus;
 import net.minecraft.server.level.ServerChunkCache;
@@ -41,6 +40,7 @@ public class PaperweightFaweWorldNativeAccess implements WorldNativeAccess<Level
 
     private static final int UPDATE = 1;
     private static final int NOTIFY = 2;
+    private static final int UNINITIALISED_TICK = Integer.MIN_VALUE;
     private static final Direction[] NEIGHBOUR_ORDER = {
             Direction.EAST,
             Direction.WEST,
@@ -51,7 +51,7 @@ public class PaperweightFaweWorldNativeAccess implements WorldNativeAccess<Level
     };
     private final PaperweightFaweAdapter paperweightFaweAdapter;
     private final WeakReference<Level> level;
-    private final AtomicInteger lastTick;
+    private final AtomicInteger lastTick = new AtomicInteger(UNINITIALISED_TICK);
     private final Set<CachedChange> cachedChanges = new HashSet<>();
     private final Set<IntPair> cachedChunksToSend = new HashSet<>();
     private SideEffectSet sideEffectSet;
@@ -59,9 +59,6 @@ public class PaperweightFaweWorldNativeAccess implements WorldNativeAccess<Level
     public PaperweightFaweWorldNativeAccess(PaperweightFaweAdapter paperweightFaweAdapter, WeakReference<Level> level) {
         this.paperweightFaweAdapter = paperweightFaweAdapter;
         this.level = level;
-        // Use the actual tick as minecraft-defined so we don't try to force blocks into the world when the server's already lagging.
-        //  - With the caveat that we don't want to have too many cached changed (1024) so we'd flush those at 1024 anyway.
-        this.lastTick = new AtomicInteger(getCurrentTick());
     }
 
     private Level getLevel() {
@@ -97,7 +94,6 @@ public class PaperweightFaweWorldNativeAccess implements WorldNativeAccess<Level
             LevelChunk levelChunk, BlockPos blockPos,
             net.minecraft.world.level.block.state.BlockState blockState
     ) {
-        int currentTick = getCurrentTick();
         if (Fawe.isMainThread()) {
             return levelChunk.setBlockState(blockPos, blockState,
                     this.sideEffectSet.shouldApply(SideEffect.UPDATE) ? 0 : 512
@@ -106,7 +102,9 @@ public class PaperweightFaweWorldNativeAccess implements WorldNativeAccess<Level
         // Since FAWE is.. Async we need to do it on the main thread (wooooo.. :( )
         cachedChanges.add(new CachedChange(levelChunk, blockPos, blockState));
         cachedChunksToSend.add(new IntPair(levelChunk.locX, levelChunk.locZ));
-        boolean nextTick = lastTick.get() > currentTick;
+        int currentTick = getCurrentTick();
+        lastTick.compareAndSet(UNINITIALISED_TICK, currentTick);
+        boolean nextTick = currentTick > lastTick.get();
         if (nextTick || cachedChanges.size() >= 1024) {
             if (nextTick) {
                 lastTick.set(currentTick);
@@ -293,15 +291,7 @@ public class PaperweightFaweWorldNativeAccess implements WorldNativeAccess<Level
     }
 
     private int getCurrentTick() {
-        try {
-            return MinecraftServer.currentTick;
-        } catch (NoSuchFieldError e) {
-            try {
-                return Bukkit.getCurrentTick();
-            } catch (Exception ex) {
-                return 0;
-            }
-        }
+        return Bukkit.getCurrentTick();
     }
 
 }
