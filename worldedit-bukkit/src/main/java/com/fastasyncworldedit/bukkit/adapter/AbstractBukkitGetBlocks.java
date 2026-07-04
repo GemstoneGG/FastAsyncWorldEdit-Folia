@@ -166,6 +166,7 @@ public abstract class AbstractBukkitGetBlocks<ServerLevel, LevelChunk> extends C
         if (bukkitWorld == null || Bukkit.isOwnedByCurrentRegion(bukkitWorld, chunkX, chunkZ)) {
             return internalCall(set, finalizer, copyKey, nmsChunk, nmsWorld);
         }
+        final CompletableFuture<Object> applied = new CompletableFuture<>();
         Bukkit.getServer().getRegionScheduler().execute(
                 WorldEditPlugin.getInstance(),
                 bukkitWorld,
@@ -173,13 +174,14 @@ public abstract class AbstractBukkitGetBlocks<ServerLevel, LevelChunk> extends C
                 chunkZ,
                 () -> {
                     try {
-                        internalCall(set, finalizer, copyKey, nmsChunk, nmsWorld);
+                        applied.complete(internalCall(set, finalizer, copyKey, nmsChunk, nmsWorld));
                     } catch (Throwable t) {
                         LOGGER.error("Error performing chunk apply at {},{} on its region thread", chunkX, chunkZ, t);
+                        applied.completeExceptionally(t);
                     }
                 }
         );
-        return (T) (Future) CompletableFuture.completedFuture(null);
+        return (T) (Future) applied;
     }
 
     protected <T extends Future<T>> T handleCallFinalizer(
