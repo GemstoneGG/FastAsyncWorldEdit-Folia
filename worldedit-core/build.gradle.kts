@@ -11,8 +11,8 @@ project.description = "Core"
 dependencies {
     constraints {
         implementation(libs.snakeyaml) {
-            version { strictly("2.6") }
-            because("Bukkit provides SnakeYaml (26.2 requirement)")
+            version { strictly("2.2") }
+            because("Bukkit provides SnakeYaml")
         }
     }
 
