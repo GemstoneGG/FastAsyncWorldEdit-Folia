@@ -292,6 +292,21 @@ public interface Region extends Iterable<BlockVector3>, Cloneable, IBatchProcess
         int maxSection = maxY >> 4;
         int yStart = (minY & 15);
         int yEnd = (maxY & 15);
+        //FAWE start - clamp to the chunk's actual section range so a region taller than the world
+        // (e.g. a schematic paste extending above the build height) never indexes a non-existent
+        // section. A no-op for any region already within the world.
+        if (minSection < get.getMinSectionPosition()) {
+            minSection = get.getMinSectionPosition();
+            yStart = 0;
+        }
+        if (maxSection > get.getMaxSectionPosition()) {
+            maxSection = get.getMaxSectionPosition();
+            yEnd = 15;
+        }
+        if (minSection > maxSection) {
+            return;
+        }
+        //FAWE end
         if (minSection == maxSection) {
             filter(chunk, filter, block, get, set, minSection, yStart, yEnd, full);
             return;

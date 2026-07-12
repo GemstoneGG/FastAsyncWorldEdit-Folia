@@ -22,7 +22,6 @@ package com.sk89q.worldedit.extension.platform;
 import com.fastasyncworldedit.core.configuration.Caption;
 import com.fastasyncworldedit.core.function.pattern.PatternTraverser;
 import com.fastasyncworldedit.core.internal.exception.FaweException;
-import com.fastasyncworldedit.core.util.FoliaUtil;
 import com.fastasyncworldedit.core.wrappers.LocationMaskedPlayerWrapper;
 import com.fastasyncworldedit.core.wrappers.WorldWrapper;
 import com.google.common.collect.Maps;
@@ -439,7 +438,7 @@ public class PlatformManager {
                         player.runAction(() -> reset(superPickaxe)
                                 .actPrimary(queryCapability(Capability.WORLD_EDITING),
                                         getConfiguration(), player, session, location, event.getFace()
-                                ), false, !FoliaUtil.isFoliaServer());
+                                ), false, true);
                         //FAWE end
                         event.setCancelled(true);
                         return;
@@ -452,7 +451,7 @@ public class PlatformManager {
                     player.runAction(() -> reset((DoubleActionBlockTool) tool)
                             .actSecondary(queryCapability(Capability.WORLD_EDITING),
                                     getConfiguration(), player, session, location, event.getFace()
-                            ), false, !FoliaUtil.isFoliaServer());
+                            ), false, true);
                     //FAWE end
                     event.setCancelled(true);
                 }
@@ -471,7 +470,7 @@ public class PlatformManager {
                             blockTool.actPrimary(queryCapability(Capability.WORLD_EDITING),
                                     getConfiguration(), player, session, location, event.getFace()
                             );
-                        }, false, !FoliaUtil.isFoliaServer());
+                        }, false, true);
                         //FAWE end
                         event.setCancelled(true);
                     }
@@ -510,17 +509,10 @@ public class PlatformManager {
                     Tool tool = session.getTool(player);
                     if (tool instanceof DoubleActionTraceTool && tool.canUse(player)) {
                         //FAWE start - run async
-                        if (FoliaUtil.isFoliaServer()) {
-                            player.runIfFree(() -> reset((DoubleActionTraceTool) tool)
-                                    .actSecondary(queryCapability(Capability.WORLD_EDITING),
-                                            getConfiguration(), player, session
-                                    ));
-                        } else {
-                            player.runAsyncIfFree(() -> reset((DoubleActionTraceTool) tool)
-                                    .actSecondary(queryCapability(Capability.WORLD_EDITING),
-                                            getConfiguration(), player, session
-                                    ));
-                        }
+                        player.runAsyncIfFree(() -> reset((DoubleActionTraceTool) tool)
+                                .actSecondary(queryCapability(Capability.WORLD_EDITING),
+                                        getConfiguration(), player, session
+                                ));
                         //FAWE end
                         event.setCancelled(true);
                         return;

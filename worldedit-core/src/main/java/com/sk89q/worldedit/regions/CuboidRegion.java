@@ -791,6 +791,20 @@ public class CuboidRegion extends AbstractRegion implements FlatRegion {
 
         int minSection = minY >> 4;
         int maxSection = maxY >> 4;
+        //FAWE start - clamp to the chunk's actual section range so a region taller than the world
+        // never indexes a non-existent section (hasSection AIOOBE). No-op when already in-world.
+        if (minSection < get.getMinSectionPosition()) {
+            minSection = get.getMinSectionPosition();
+            yStart = 0;
+        }
+        if (maxSection > get.getMaxSectionPosition()) {
+            maxSection = get.getMaxSectionPosition();
+            yEnd = 15;
+        }
+        if (minSection > maxSection) {
+            return;
+        }
+        //FAWE end
         if (minSection == maxSection) {
             filter(chunk, filter, block, get, set, minSection, localMinX, yStart, localMinZ, localMaxX, yEnd, localMaxZ, full);
             return;

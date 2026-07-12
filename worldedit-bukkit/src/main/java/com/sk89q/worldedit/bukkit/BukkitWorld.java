@@ -152,10 +152,28 @@ public class BukkitWorld extends AbstractWorld {
         if (FoliaUtil.isFoliaServer()) {
             World world = getWorld();
             Location location = new Location(world, position.x(), position.y(), position.z());
+            if (Bukkit.isOwnedByCurrentRegion(location)) {
+                return supplier.get();
+            }
             CompletableFuture<T> future = new CompletableFuture<>();
             Bukkit.getServer().getRegionScheduler().run(
                     WorldEditPlugin.getInstance(),
                     location,
+                    scheduledTask -> future.complete(supplier.get())
+            );
+            return future.join();
+        }
+        return TaskManager.taskManager().sync(supplier);
+    }
+
+    private <T> T syncGlobal(java.util.function.Supplier<T> supplier) {
+        if (FoliaUtil.isFoliaServer()) {
+            if (FoliaUtil.isGlobalTickThread()) {
+                return supplier.get();
+            }
+            CompletableFuture<T> future = new CompletableFuture<>();
+            Bukkit.getServer().getGlobalRegionScheduler().run(
+                    WorldEditPlugin.getInstance(),
                     scheduledTask -> future.complete(supplier.get())
             );
             return future.join();
@@ -270,8 +288,8 @@ public class BukkitWorld extends AbstractWorld {
     public int getBlockLightLevel(BlockVector3 pt) {
         //FAWE start - safe edit region
         testCoords(pt);
+        return syncRegion(pt, () -> (int) getWorld().getBlockAt(pt.x(), pt.y(), pt.z()).getLightLevel());
         //FAWE end
-        return getWorld().getBlockAt(pt.x(), pt.y(), pt.z()).getLightLevel();
     }
 
     @Override
@@ -308,22 +326,21 @@ public class BukkitWorld extends AbstractWorld {
             return false;
         }
 
-        Block block = getWorld().getBlockAt(pt.x(), pt.y(), pt.z());
-        BlockState state = PaperLib.getBlockState(block, false).getState();
-        if (!(state instanceof InventoryHolder)) {
-            return false;
-        }
-
-        TaskManager.taskManager().sync(() -> {
-            InventoryHolder chest = (InventoryHolder) state;
+        //FAWE start - read + clear the container on the block's owning region thread (Folia)
+        return syncRegion(pt, () -> {
+            Block block = getWorld().getBlockAt(pt.x(), pt.y(), pt.z());
+            BlockState state = PaperLib.getBlockState(block, false).getState();
+            if (!(state instanceof InventoryHolder chest)) {
+                return false;
+            }
             Inventory inven = chest.getInventory();
             if (chest instanceof Chest) {
                 inven = ((Chest) chest).getBlockInventory();
             }
             inven.clear();
-            return null;
+            return true;
         });
-        return true;
+        //FAWE end
     }
 
     /**
@@ -399,8 +416,21 @@ public class BukkitWorld extends AbstractWorld {
 
     @Override
     public void dropItem(Vector3 pt, BaseItemStack item) {
+        //FAWE start - spawning an item entity is only legal on the drop location's owning region
+        // thread. Tool edits now run on FAWE worker threads, so hop there (fire-and-forget) on Folia.
         World world = getWorld();
-        world.dropItemNaturally(BukkitAdapter.adapt(world, pt), BukkitAdapter.adapt(item));
+        Location location = BukkitAdapter.adapt(world, pt);
+        org.bukkit.inventory.ItemStack stack = BukkitAdapter.adapt(item);
+        if (FoliaUtil.isFoliaServer() && !Bukkit.isOwnedByCurrentRegion(location)) {
+            Bukkit.getServer().getRegionScheduler().run(
+                    WorldEditPlugin.getInstance(),
+                    location,
+                    scheduledTask -> world.dropItemNaturally(location, stack)
+            );
+            return;
+        }
+        world.dropItemNaturally(location, stack);
+        //FAWE end
     }
 
     @Override
@@ -460,10 +490,15 @@ public class BukkitWorld extends AbstractWorld {
     @SuppressWarnings("deprecation")
     @Override
     public void fixAfterFastMode(Iterable<BlockVector2> chunks) {
+        //FAWE start - refresh each chunk on its owning region thread (Folia)
         World world = getWorld();
         for (BlockVector2 chunkPos : chunks) {
-            world.refreshChunk(chunkPos.x(), chunkPos.z());
+            syncRegion(BlockVector3.at(chunkPos.x() << 4, 0, chunkPos.z() << 4), () -> {
+                world.refreshChunk(chunkPos.x(), chunkPos.z());
+                return null;
+            });
         }
+        //FAWE end
     }
 
     @Override
@@ -475,83 +510,108 @@ public class BukkitWorld extends AbstractWorld {
             return false;
         }
 
-        world.playEffect(BukkitAdapter.adapt(world, position), effect, data);
-
-        return true;
+        //FAWE start - play the effect on the location's owning region thread (Folia)
+        return syncRegion(position.toBlockPoint(), () -> {
+            world.playEffect(BukkitAdapter.adapt(world, position), effect, data);
+            return true;
+        });
+        //FAWE end
     }
 
     //FAWE start - allow block break effect of non-legacy blocks
     @Override
     public boolean playBlockBreakEffect(Vector3 position, BlockType type) {
         World world = getWorld();
-        world.playEffect(BukkitAdapter.adapt(world, position), Effect.STEP_SOUND, BukkitAdapter.adapt(type));
-        return true;
+        return syncRegion(position.toBlockPoint(), () -> {
+            world.playEffect(BukkitAdapter.adapt(world, position), Effect.STEP_SOUND, BukkitAdapter.adapt(type));
+            return true;
+        });
     }
     //FAWE end
 
     @Override
     public WeatherType getWeather() {
-        if (getWorld().isThundering()) {
-            return WeatherTypes.THUNDER_STORM;
-        } else if (getWorld().hasStorm()) {
-            return WeatherTypes.RAIN;
-        }
-
-        return WeatherTypes.CLEAR;
+        //FAWE start - weather is global-region state on Folia
+        return syncGlobal(() -> {
+            if (getWorld().isThundering()) {
+                return WeatherTypes.THUNDER_STORM;
+            } else if (getWorld().hasStorm()) {
+                return WeatherTypes.RAIN;
+            }
+            return WeatherTypes.CLEAR;
+        });
+        //FAWE end
     }
 
     @Override
     public long getRemainingWeatherDuration() {
-        return getWorld().getWeatherDuration();
+        //FAWE start - weather is global-region state on Folia
+        return syncGlobal(() -> (long) getWorld().getWeatherDuration());
+        //FAWE end
     }
 
     @Override
     public void setWeather(WeatherType weatherType) {
-        if (weatherType == WeatherTypes.THUNDER_STORM) {
-            getWorld().setThundering(true);
-        } else if (weatherType == WeatherTypes.RAIN) {
-            getWorld().setStorm(true);
-        } else {
-            getWorld().setStorm(false);
-            getWorld().setThundering(false);
-        }
+        //FAWE start - weather is global-region state on Folia
+        syncGlobal(() -> {
+            if (weatherType == WeatherTypes.THUNDER_STORM) {
+                getWorld().setThundering(true);
+            } else if (weatherType == WeatherTypes.RAIN) {
+                getWorld().setStorm(true);
+            } else {
+                getWorld().setStorm(false);
+                getWorld().setThundering(false);
+            }
+            return null;
+        });
+        //FAWE end
     }
 
     @Override
     public void setWeather(WeatherType weatherType, long duration) {
         // Who named these methods...
-        if (weatherType == WeatherTypes.THUNDER_STORM) {
-            getWorld().setThundering(true);
-            getWorld().setThunderDuration((int) duration);
-            getWorld().setWeatherDuration((int) duration);
-        } else if (weatherType == WeatherTypes.RAIN) {
-            getWorld().setStorm(true);
-            getWorld().setWeatherDuration((int) duration);
-        } else {
-            getWorld().setStorm(false);
-            getWorld().setThundering(false);
-            getWorld().setWeatherDuration((int) duration);
-        }
+        //FAWE start - weather is global-region state on Folia
+        syncGlobal(() -> {
+            if (weatherType == WeatherTypes.THUNDER_STORM) {
+                getWorld().setThundering(true);
+                getWorld().setThunderDuration((int) duration);
+                getWorld().setWeatherDuration((int) duration);
+            } else if (weatherType == WeatherTypes.RAIN) {
+                getWorld().setStorm(true);
+                getWorld().setWeatherDuration((int) duration);
+            } else {
+                getWorld().setStorm(false);
+                getWorld().setThundering(false);
+                getWorld().setWeatherDuration((int) duration);
+            }
+            return null;
+        });
+        //FAWE end
     }
 
     @Override
     public BlockVector3 getSpawnPosition() {
-        return BukkitAdapter.asBlockVector(getWorld().getSpawnLocation());
+        //FAWE start - the spawn point is global-region state on Folia
+        return syncGlobal(() -> BukkitAdapter.asBlockVector(getWorld().getSpawnLocation()));
+        //FAWE end
     }
 
     @Override
     public void simulateBlockMine(BlockVector3 pt) {
-        //FAWE start - safe edit region
+        //FAWE start - safe edit region + break on the block's owning region thread (Folia)
         testCoords(pt);
+        syncRegion(pt, () -> {
+            getWorld().getBlockAt(pt.x(), pt.y(), pt.z()).breakNaturally();
+            return null;
+        });
         //FAWE end
-        getWorld().getBlockAt(pt.x(), pt.y(), pt.z()).breakNaturally();
     }
 
     //FAWE start
     @Override
     public Collection<BaseItemStack> getBlockDrops(BlockVector3 position) {
-        return getWorld().getBlockAt(position.x(), position.y(), position.z()).getDrops().stream()
-                .map(BukkitAdapter::adapt).collect(Collectors.toList());
+        return syncRegion(position, () -> getWorld().getBlockAt(position.x(), position.y(), position.z()).getDrops()
+                .stream().map(BukkitAdapter::adapt).collect(Collectors.toList()));
     }
     //FAWE end
 
@@ -701,28 +761,31 @@ public class BukkitWorld extends AbstractWorld {
     @SuppressWarnings("deprecation")
     @Override
     public BiomeType getBiome(BlockVector3 position) {
-        //FAWE start - safe edit region
+        //FAWE start - safe edit region + read on the block's owning region thread (Folia)
         testCoords(position);
-        //FAWE end
-        if (HAS_3D_BIOMES) {
-            return BukkitAdapter.adapt(getWorld().getBiome(position.x(), position.y(), position.z()));
-        } else {
+        return syncRegion(position, () -> {
+            if (HAS_3D_BIOMES) {
+                return BukkitAdapter.adapt(getWorld().getBiome(position.x(), position.y(), position.z()));
+            }
             return BukkitAdapter.adapt(getWorld().getBiome(position.x(), position.z()));
-        }
+        });
+        //FAWE end
     }
 
     @SuppressWarnings("deprecation")
     @Override
     public boolean setBiome(BlockVector3 position, BiomeType biome) {
-        //FAWE start - safe edit region
+        //FAWE start - safe edit region + write on the block's owning region thread (Folia)
         testCoords(position);
+        return syncRegion(position, () -> {
+            if (HAS_3D_BIOMES) {
+                getWorld().setBiome(position.x(), position.y(), position.z(), BukkitAdapter.adapt(biome));
+            } else {
+                getWorld().setBiome(position.x(), position.z(), BukkitAdapter.adapt(biome));
+            }
+            return true;
+        });
         //FAWE end
-        if (HAS_3D_BIOMES) {
-            getWorld().setBiome(position.x(), position.y(), position.z(), BukkitAdapter.adapt(biome));
-        } else {
-            getWorld().setBiome(position.x(), position.z(), BukkitAdapter.adapt(biome));
-        }
-        return true;
     }
 
     //FAWE start
@@ -745,8 +808,13 @@ public class BukkitWorld extends AbstractWorld {
 
     @Override
     public void refreshChunk(int chunkX, int chunkZ) {
+        //FAWE start - refresh the chunk on its owning region thread (Folia)
         testCoords(BlockVector3.at(chunkX << 4, 0, chunkZ << 4));
-        getWorld().refreshChunk(chunkX, chunkZ);
+        syncRegion(BlockVector3.at(chunkX << 4, 0, chunkZ << 4), () -> {
+            getWorld().refreshChunk(chunkX, chunkZ);
+            return null;
+        });
+        //FAWE end
     }
 
     @Override
