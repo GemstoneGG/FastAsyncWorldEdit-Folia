@@ -13,14 +13,13 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v7
-      - name: Validate Gradle Wrapper
-        uses: gradle/actions/wrapper-validation@v6
       - name: Setup Java
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          cache: gradle
           java-version: 25
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
       - name: Build
         run: ./gradlew build
       - name: Determine release status
