@@ -2,7 +2,6 @@ name: Build PR
 on: [pull_request]
 jobs:
   build_pr:
-    if: github.repository_owner == 'IntellectualSites'
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -22,7 +21,7 @@ jobs:
         run: ./gradlew build -s
       - name: Archive artifacts
         uses: actions/upload-artifact@v7
-        if: ${{ matrix.os == 'ubuntu-latest' }} # only upload once, use linux builds
+        if: ${{ matrix.os == 'ubuntu-latest' }}
         with:
             name: FastAsyncWorldEdit-Paper-SNAPSHOT
             path: worldedit-bukkit/build/libs/FastAsyncWorldEdit-Paper-*.jar
