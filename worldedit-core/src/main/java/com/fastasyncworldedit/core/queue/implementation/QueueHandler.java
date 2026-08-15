@@ -64,6 +64,8 @@ public abstract class QueueHandler implements Trimable, Runnable {
     /**
      * Secondary queue should be used for "cleanup" tasks that are likely to be shorter in life than those submitted to the
      * primary queue. They may be IO-bound tasks.
+     *
+     * @see #getForkJoinPoolSecondary() the full task contract and the reasoning behind it
      */
     private final ForkJoinPool forkJoinPoolSecondary = new ForkJoinPool(
             Settings.settings().QUEUE.PARALLEL_THREADS,
@@ -196,6 +198,11 @@ public abstract class QueueHandler implements Trimable, Runnable {
      * Complete a task in the {@code forkJoinPoolSecondary} queue. Secondary queue should be used for "cleanup" tasks that are
      * likely to be shorter in life than those submitted to the primary queue. They may be IO-bound tasks.
      *
+     * <p>
+     * The submitted task must not wait on a {@link Future} completed by this pool, and must not be actor or command work.
+     * See {@link #getForkJoinPoolSecondary()} for the full contract and the reasoning behind it.
+     * </p>
+     *
      * @param run   Runnable to run
      * @param value Value to return when done
      * @param <T>   Value type
@@ -209,6 +216,11 @@ public abstract class QueueHandler implements Trimable, Runnable {
      * Complete a task in the {@code forkJoinPoolSecondary} queue. Secondary queue should be used for "cleanup" tasks that are
      * likely to be shorter in life than those submitted to the primary queue. They may be IO-bound tasks.
      *
+     * <p>
+     * The submitted task must not wait on a {@link Future} completed by this pool, and must not be actor or command work.
+     * See {@link #getForkJoinPoolSecondary()} for the full contract and the reasoning behind it.
+     * </p>
+     *
      * @param run Runnable to run
      * @return Future for submitted task
      */
@@ -219,6 +231,11 @@ public abstract class QueueHandler implements Trimable, Runnable {
     /**
      * Complete a task in the {@code forkJoinPoolSecondary} queue. Secondary queue should be used for "cleanup" tasks that are
      * likely to be shorter in life than those submitted to the primary queue. They may be IO-bound tasks.
+     *
+     * <p>
+     * The submitted task must not wait on a {@link Future} completed by this pool, and must not be actor or command work.
+     * See {@link #getForkJoinPoolSecondary()} for the full contract and the reasoning behind it.
+     * </p>
      *
      * @param call Callable to run
      * @param <T>  Return value type
@@ -543,6 +560,27 @@ public abstract class QueueHandler implements Trimable, Runnable {
     /**
      * Secondary queue should be used for "cleanup" tasks that are likely to be shorter in life than those submitted to the
      * primary queue. They may be IO-bound tasks.
+     *
+     * <p>
+     * Tasks submitted here must observe two rules:
+     * </p>
+     * <ul>
+     *     <li><b>A task must not wait on anything this pool completes.</b> {@link ForkJoinPool} only compensates for
+     *     blocking it can observe via {@link ForkJoinPool#managedBlock(ForkJoinPool.ManagedBlocker)}. It cannot see
+     *     {@code monitorenter} or {@link Future#get()}, so it counts a blocked worker as running and does not start a
+     *     replacement. Every worker can therefore end up parked waiting for work that only this pool can perform, and
+     *     nothing progresses. If a task does have such a dependency, do not block inside it: submit the dependent half as
+     *     a separate task and chain the futures.</li>
+     *     <li><b>No actor or command work.</b> Player-facing actions belong on
+     *     {@link com.sk89q.worldedit.extension.platform.Actor#runAction(Runnable, boolean, boolean)} (or its
+     *     {@code queueAction} / {@code runAsyncIfFree} wrappers), which serialises per actor without holding a worker
+     *     here.</li>
+     * </ul>
+     * <p>
+     * Downstream plugins should not submit whole edits or other long-lived work to this pool, and should use their own
+     * threads instead. The pool is sized by {@code parallel-threads} for FAWE's own cleanup work; occupying it starves
+     * that work.
+     * </p>
      * <p>
      * Internal API usage only.
      *
