@@ -5,6 +5,7 @@ import ca.spottedleaf.moonrise.patches.chunk_system.scheduling.ChunkHolderManage
 import com.fastasyncworldedit.bukkit.adapter.CachedBukkitAdapter;
 import com.fastasyncworldedit.bukkit.adapter.DelegateSemaphore;
 import com.fastasyncworldedit.bukkit.adapter.NMSAdapter;
+import com.fastasyncworldedit.bukkit.util.PaperSupport;
 import com.fastasyncworldedit.core.Fawe;
 import com.fastasyncworldedit.core.FaweCache;
 import com.fastasyncworldedit.core.math.BitArrayUnstretched;
@@ -20,7 +21,6 @@ import com.sk89q.worldedit.world.biome.BiomeType;
 import com.sk89q.worldedit.world.biome.BiomeTypes;
 import com.sk89q.worldedit.world.block.BlockState;
 import com.sk89q.worldedit.world.block.BlockTypesCache;
-import io.papermc.lib.PaperLib;
 import io.papermc.paper.util.MCUtil;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
@@ -149,7 +149,7 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
             getVisibleChunkIfPresent.setAccessible(true);
             methodGetVisibleChunk = lookup.unreflect(getVisibleChunkIfPresent);
 
-            if (!PaperLib.isPaper()) {
+            if (!PaperSupport.isPaper()) {
                 fieldThreadingDetector = PalettedContainer.class.getDeclaredField(Refraction.pickName("threadingDetector", "f"));
                 fieldThreadingDetector.setAccessible(true);
                 fieldLock = ThreadingDetector.class.getDeclaredField(Refraction.pickName("lock", "c"));
@@ -211,7 +211,7 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
             ThreadLocal.withInitial(() -> new DelegateSemaphore(1, null));
 
     static DelegateSemaphore applyLock(LevelChunkSection section) {
-        if (PaperLib.isPaper()) {
+        if (PaperSupport.isPaper()) {
             return SEMAPHORE_THREAD_LOCAL.get();
         }
         try {
@@ -239,7 +239,7 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
         if (levelChunk != null) {
             return CompletableFuture.completedFuture(levelChunk);
         }
-        if (PaperLib.isPaper()) {
+        if (PaperSupport.isPaper()) {
             CompletableFuture<LevelChunk> future = serverLevel
                     .getWorld()
                     .getChunkAtAsync(chunkX, chunkZ, true, true)
@@ -275,7 +275,7 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
     }
 
     public static @Nullable LevelChunk getChunkImmediatelyAsync(ServerLevel serverLevel, int chunkX, int chunkZ) {
-        if (!PaperLib.isPaper()) {
+        if (!PaperSupport.isPaper()) {
             LevelChunk nmsChunk = serverLevel.getChunkSource().getChunk(chunkX, chunkZ, false);
             if (nmsChunk != null) {
                 return nmsChunk;
@@ -333,7 +333,7 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
             return;
         }
         LevelChunk levelChunk;
-        if (PaperLib.isPaper()) {
+        if (PaperSupport.isPaper()) {
             // getChunkAtIfLoadedImmediately is paper only
             levelChunk = nmsWorld.getChunkSource().getChunkAtIfLoadedImmediately(chunkX, chunkZ);
         } else {
@@ -362,7 +362,7 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
                             ChunkPos pos = regionChunk.getPos();
                             NMSAdapter.markChunkPacketRead(lockHolder);
                             ClientboundLevelChunkWithLightPacket packet;
-                            if (PaperLib.isPaper()) {
+                            if (PaperSupport.isPaper()) {
                                 packet = new ClientboundLevelChunkWithLightPacket(
                                         regionChunk,
                                         nmsWorld.getLightEngine(),
@@ -400,7 +400,7 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
                     ChunkPos pos = levelChunk.getPos();
                     NMSAdapter.markChunkPacketRead(lockHolder);
                     ClientboundLevelChunkWithLightPacket packet;
-                    if (PaperLib.isPaper()) {
+                    if (PaperSupport.isPaper()) {
                         packet = new ClientboundLevelChunkWithLightPacket(
                                 levelChunk,
                                 nmsWorld.getLightEngine(),
@@ -702,7 +702,7 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
     }
 
     static List<Entity> getEntities(LevelChunk chunk) {
-        if (PaperLib.isPaper()) {
+        if (PaperSupport.isPaper()) {
             return Optional.ofNullable(chunk.level
                     .moonrise$getEntityLookup()
                     .getChunk(chunk.locX, chunk.locZ)).map(ChunkEntitySlices::getAllEntities).orElse(Collections.emptyList());
