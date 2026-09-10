@@ -54,7 +54,7 @@ public class PaperweightGetBlocks_Copy implements IChunkGet {
 
     protected PaperweightGetBlocks_Copy(LevelChunk levelChunk) {
         this.levelChunk = levelChunk;
-        this.serverLevel = levelChunk.level;
+        this.serverLevel = (ServerLevel) levelChunk.getLevel();
         this.minHeight = serverLevel.getMinY();
         this.maxHeight = serverLevel.getMaxY() - 1; // Minecraft max limit is exclusive.
         this.blocks = new char[getSectionCount()][];
