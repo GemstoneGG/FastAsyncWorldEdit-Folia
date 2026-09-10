@@ -653,11 +653,11 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
 
     static void removeBeacon(BlockEntity beacon, LevelChunk levelChunk) {
         try {
-            if (levelChunk.loaded || levelChunk.level.isClientSide()) {
+            if (levelChunk.loaded || levelChunk.getLevel().isClientSide()) {
                 BlockEntity blockEntity = levelChunk.blockEntities.remove(beacon.getBlockPos());
                 if (blockEntity != null) {
-                    if (!levelChunk.level.isClientSide()) {
-                        methodRemoveGameEventListener.invoke(levelChunk, beacon, levelChunk.level);
+                    if (!levelChunk.getLevel().isClientSide()) {
+                        methodRemoveGameEventListener.invoke(levelChunk, beacon, levelChunk.getLevel());
                     }
                     fieldRemove.set(beacon, true);
                 }
@@ -670,13 +670,13 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
 
     static List<Entity> getEntities(LevelChunk chunk) {
         if (PaperSupport.isPaper()) {
-            return Optional.ofNullable(chunk.level
+            return Optional.ofNullable(chunk.getLevel()
                     .moonrise$getEntityLookup()
                     .getChunk(chunk.locX, chunk.locZ)).map(ChunkEntitySlices::getAllEntities).orElse(Collections.emptyList());
         }
         try {
             //noinspection unchecked
-            return getEntitySectionManager(chunk.level).getEntities(chunk.getPos());
+            return getEntitySectionManager((ServerLevel) chunk.getLevel()).getEntities(chunk.getPos());
         } catch (IllegalAccessException e) {
             throw new RuntimeException("Failed to lookup entities [PAPER=false]", e);
         }
