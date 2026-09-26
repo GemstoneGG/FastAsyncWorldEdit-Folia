@@ -8,18 +8,7 @@ plugins {
     id("io.papermc.paperweight.userdev")
 }
 
-val requiresReobfJar = project.name.startsWith("adapter-1_")
-
-paperweight {
-    injectPaperRepository = false
-    reobfArtifactConfiguration = io.papermc.paperweight.userdev.ReobfArtifactConfiguration.REOBF_PRODUCTION
-}
-
 repositories {
-    maven {
-        name = "PaperMC"
-        url = uri("https://repo.papermc.io/repository/maven-public/")
-    }
     maven {
         name = "EngineHub Repository"
         url = uri("https://maven.enginehub.org/repo/")
@@ -28,13 +17,14 @@ repositories {
         }
     }
     maven {
-        name = "IntellectualSites"
-        url = uri("https://repo.intellectualsites.dev/repository/maven-all/")
+        name = "PaperMC"
+        url = uri("https://repo.papermc.io/repository/maven-public/")
+    }
+    maven {
+        name = "FabricMC (Yarn)"
+        url = uri("https://maven.fabricmc.net/#yarn-only")
     }
     mavenCentral()
-    afterEvaluate {
-        killNonEngineHubRepositories()
-    }
 }
 
 dependencies {
@@ -44,6 +34,9 @@ dependencies {
         implementation("net.kyori:adventure-bom") {
             version { strictly(stringyLibs.getVersion("adventure").strictVersion) }
             because("Ensure a consistent version of adventure is used.")
+        }
+        "remapper"("net.fabricmc:tiny-remapper:[${stringyLibs.getVersion("minimumTinyRemapper")},)") {
+            because("Need remapper to support Java 21")
         }
     }
 }
@@ -56,12 +49,6 @@ java {
         toolchain {
             languageVersion.set(JavaLanguageVersion.of(21))
         }
-    }
-}
-
-tasks.named("assemble") {
-    if (requiresReobfJar) {
-        dependsOn("reobfJar")
     }
 }
 
