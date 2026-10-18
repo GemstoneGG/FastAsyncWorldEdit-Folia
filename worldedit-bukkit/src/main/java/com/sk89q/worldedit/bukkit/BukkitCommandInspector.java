@@ -22,6 +22,7 @@ package com.sk89q.worldedit.bukkit;
 import com.sk89q.bukkit.util.CommandInspector;
 import com.sk89q.worldedit.WorldEdit;
 import com.sk89q.worldedit.extension.platform.Actor;
+import com.sk89q.worldedit.extension.platform.NoCapablePlatformException;
 import com.sk89q.worldedit.internal.util.LogManagerCompat;
 import org.apache.logging.log4j.Logger;
 import org.bukkit.command.Command;
@@ -53,7 +54,13 @@ class BukkitCommandInspector implements CommandInspector {
     public String getShortText(Command command) {
         Optional<org.enginehub.piston.Command> mapping = dispatcher.getCommand(command.getName());
         if (mapping.isPresent()) {
-            return reduceToText(mapping.get().getDescription(), WorldEdit.getInstance().getConfiguration().defaultLocale);
+            try {
+                return reduceToText(mapping.get().getDescription(), WorldEdit.getInstance().getConfiguration().defaultLocale);
+            } catch (NoCapablePlatformException e) {
+                // Bukkit can build help topics while the platform is unavailable (including after a failed enable).
+                // Use the text stored at command registration without consulting configuration or translations.
+                return command.getDescription();
+            }
         } else {
             LOGGER.warn("BukkitCommandInspector doesn't know how about the command '" + command + "'");
             return "Help text not available";
@@ -64,7 +71,11 @@ class BukkitCommandInspector implements CommandInspector {
     public String getFullText(Command command) {
         Optional<org.enginehub.piston.Command> mapping = dispatcher.getCommand(command.getName());
         if (mapping.isPresent()) {
-            return reduceToText(mapping.get().getFullHelp(), WorldEdit.getInstance().getConfiguration().defaultLocale);
+            try {
+                return reduceToText(mapping.get().getFullHelp(), WorldEdit.getInstance().getConfiguration().defaultLocale);
+            } catch (NoCapablePlatformException e) {
+                return command.getUsage();
+            }
         } else {
             LOGGER.warn("BukkitCommandInspector doesn't know how about the command '" + command + "'");
             return "Help text not available";
