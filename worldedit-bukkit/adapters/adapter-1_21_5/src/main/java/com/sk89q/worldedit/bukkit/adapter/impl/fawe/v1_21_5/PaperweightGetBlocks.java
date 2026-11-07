@@ -15,6 +15,7 @@ import com.fastasyncworldedit.core.queue.IChunkSet;
 import com.fastasyncworldedit.core.util.FoliaUtil;
 import com.fastasyncworldedit.core.util.MathMan;
 import com.fastasyncworldedit.core.util.NbtUtils;
+import com.fastasyncworldedit.core.util.TaskManager;
 import com.fastasyncworldedit.core.util.collection.AdaptedMap;
 import com.sk89q.worldedit.bukkit.BukkitAdapter;
 import com.sk89q.worldedit.bukkit.BukkitEntity;
@@ -349,37 +350,41 @@ public class PaperweightGetBlocks extends AbstractBukkitGetBlocks<ServerLevel, L
                 }
             copies.put(copyKey, copy);
         }
-        // Remove existing tiles. Create a copy so that we can remove blocks
-        Map<BlockPos, BlockEntity> chunkTiles = new HashMap<>(nmsChunk.getBlockEntities());
-        // Store beacon positions for deferred sound/event handling (but remove block entity immediately)
-        List<BlockPos> beaconPositions = null;
-        if (!chunkTiles.isEmpty()) {
-            for (Map.Entry<BlockPos, BlockEntity> entry : chunkTiles.entrySet()) {
-                final BlockPos pos = entry.getKey();
-                final int lx = pos.getX() & 15;
-                final int ly = pos.getY();
-                final int lz = pos.getZ() & 15;
-                final int layer = ly >> 4;
-                if (!set.hasSection(layer)) {
-                    continue;
-                }
+        //TODO: optimise
+        List<BlockPos> beaconPositions = TaskManager.taskManager().sync(() -> {
+            // Remove existing tiles. Create a copy so that we can remove blocks
+            Map<BlockPos, BlockEntity> chunkTiles = new HashMap<>(nmsChunk.getBlockEntities());
+            // Store beacon positions for deferred sound/event handling (but remove block entity immediately)
+            List<BlockPos> positions = null;
+            if (!chunkTiles.isEmpty()) {
+                for (Map.Entry<BlockPos, BlockEntity> entry : chunkTiles.entrySet()) {
+                    final BlockPos pos = entry.getKey();
+                    final int lx = pos.getX() & 15;
+                    final int ly = pos.getY();
+                    final int lz = pos.getZ() & 15;
+                    final int layer = ly >> 4;
+                    if (!set.hasSection(layer)) {
+                        continue;
+                    }
 
-                int ordinal = set.getBlock(lx, ly, lz).getOrdinal();
-                if (ordinal != BlockTypesCache.ReservedIDs.__RESERVED__) {
-                    BlockEntity tile = entry.getValue();
-                    if (createCopy) {
-                        copy.storeTile(tile);
-                    }
-                    if (PaperSupport.isPaper() && tile instanceof BeaconBlockEntity) {
-                        if (beaconPositions == null) {
-                            beaconPositions = new ArrayList<>();
+                    int ordinal = set.getBlock(lx, ly, lz).getOrdinal();
+                    if (ordinal != BlockTypesCache.ReservedIDs.__RESERVED__) {
+                        BlockEntity tile = entry.getValue();
+                        if (createCopy) {
+                            copy.storeTile(tile);
                         }
-                        beaconPositions.add(pos.immutable());
+                        if (PaperSupport.isPaper() && tile instanceof BeaconBlockEntity) {
+                            if (positions == null) {
+                                positions = new ArrayList<>();
+                            }
+                            positions.add(pos.immutable());
+                        }
+                        nmsChunk.removeBlockEntity(pos);
                     }
-                    nmsChunk.removeBlockEntity(pos);
                 }
             }
-        }
+            return positions;
+        });
         final BiomeType[][] biomes = set.getBiomes();
 
         int bitMask = 0;
